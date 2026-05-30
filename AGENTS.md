@@ -11,10 +11,12 @@
 ## Build, Test, and Development Commands
 
 - `pnpm install` installs dependencies.
-- `pnpm dev` starts Vite for ZTools development plugin mode.
+- `pnpm dev` starts Vite for ZTools development plugin mode on `127.0.0.1:5187`.
 - `pnpm typecheck` runs Vue and TypeScript checks without emitting files.
 - `pnpm build` runs type checks and builds the production plugin UI.
 - `pnpm preview` serves the production build for local inspection.
+
+`public/plugin.json` must keep `development.main` aligned with the `pnpm dev` port. The current port is fixed with `--strictPort`; do not switch back to the template default `5173`.
 
 ## Coding Style & Naming Conventions
 
@@ -27,6 +29,14 @@
 ## Testing Guidelines
 
 There is no dedicated test runner yet. For each change, run `pnpm typecheck` and `pnpm build`. When touching ZTools API usage, manually verify the plugin in ZTools dev mode with at least one configured AI model.
+
+## Runtime Contract
+
+- Requires a ZTools host whose plugin AI API accepts `headers` and `extraBody`.
+- Built-in features are static manifest entries: `manager`, `translate`, `polish`, and `explain`.
+- Custom agent features are dynamic and use `agent-<agentId>` codes.
+- Persisted plugin state uses `window.ztools.dbStorage` key `state`; do not persist transient input text.
+- Keep `src/env.d.ts`, `README.md`, and host API assumptions in sync when AI option fields change.
 
 ## Commit & Pull Request Guidelines
 
