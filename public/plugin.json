@@ -1,0 +1,61 @@
+{
+  "$schema": "node_modules/@ztools-center/ztools-api-types/resource/ztools.schema.json",
+  "name": "ztools-ai-agents",
+  "title": "AI Agents",
+  "description": "用可配置 Agent 管理翻译、润色、解读等 AI 工作流。",
+  "author": "ZTools AI Agents contributors",
+  "version": "0.1.0",
+  "main": "index.html",
+  "preload": "preload/services.js",
+  "logo": "logo.png",
+  "development": {
+    "main": "http://localhost:5173"
+  },
+  "features": [
+    {
+      "code": "manager",
+      "explain": "管理 AI Agent 和提示词模板",
+      "icon": "logo.png",
+      "cmds": ["AI Agents", "AI代理", "Agent管理", "提示词管理"]
+    },
+    {
+      "code": "translate",
+      "explain": "中英文翻译",
+      "icon": "logo.png",
+      "cmds": [
+        "翻译",
+        "translate",
+        {
+          "type": "over",
+          "label": "中英文翻译"
+        }
+      ]
+    },
+    {
+      "code": "polish",
+      "explain": "润色转写",
+      "icon": "logo.png",
+      "cmds": [
+        "润色",
+        "polish",
+        {
+          "type": "over",
+          "label": "润色转写"
+        }
+      ]
+    },
+    {
+      "code": "explain",
+      "explain": "中英文解读",
+      "icon": "logo.png",
+      "cmds": [
+        "解读",
+        "explain",
+        {
+          "type": "over",
+          "label": "中英文解读"
+        }
+      ]
+    }
+  ]
+}
