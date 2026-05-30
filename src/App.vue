@@ -368,7 +368,7 @@ onMounted(async () => {
               <Square :size="15" />
               Stop
             </button>
-            <button class="ghost-button" :disabled="models.length > 0" @click="openModelSettings">
+            <button class="ghost-button" title="Open AI model settings" @click="openModelSettings">
               <Settings :size="15" />
               Models
             </button>
