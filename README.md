@@ -26,7 +26,7 @@ pnpm dev
 pnpm build
 ```
 
-During development, import `public/plugin.json` as a ZTools development plugin. The manifest points to `http://localhost:5173` for dev mode.
+During development, import `public/plugin.json` as a ZTools development plugin. The manifest points to `http://127.0.0.1:5187` for dev mode.
 
 ## Agent Configuration
 
