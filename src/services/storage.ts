@@ -9,6 +9,7 @@ import type {
 } from '../types'
 import { createDefaultAgents, isBuiltInAgentId, isLegacyBuiltInSystemPrompt } from './defaultAgents'
 import { createLocalHistoryTitle } from './historyTitles'
+import { DEFAULT_STREAM_EXTRA_BODY_TEXT, normalizeAgentExtraBodyText } from './requestBody'
 
 const STATE_KEY = 'state'
 export const HISTORY_LIMIT_PER_AGENT = 50
@@ -27,7 +28,7 @@ const DEFAULT_AGENT_OPTIONS = {
   allowVision: true,
   visionDetail: 'auto' as const,
   thinkingProvider: 'auto' as const,
-  thinkingMode: 'off' as const,
+  thinkingMode: 'default' as const,
   thinkingEffort: '' as const,
   thinkingBudgetText: ''
 }
@@ -93,6 +94,7 @@ export function normalizePluginSettings(settings: unknown): PluginSettings {
 }
 
 function normalizeAgent(agent: AgentConfig): AgentConfig {
+  const hasSavedExtraBodyText = typeof agent.extraBodyText === 'string'
   const normalized = {
     ...DEFAULT_AGENT_OPTIONS,
     ...agent
@@ -105,17 +107,14 @@ function normalizeAgent(agent: AgentConfig): AgentConfig {
     normalized.runTemplate = 'standard'
   }
 
-  if (
-    !normalized.model &&
-    normalized.thinkingProvider === 'auto' &&
-    normalized.thinkingMode === 'default' &&
-    !normalized.thinkingEffort &&
-    !normalized.thinkingBudgetText
-  ) {
-    normalized.thinkingMode = 'off'
+  if (typeof normalized.stream !== 'boolean') {
+    normalized.stream = normalized.runTemplate === 'nativeOcr' ? false : true
   }
+  if (typeof normalized.headersText !== 'string') normalized.headersText = ''
+  if (!hasSavedExtraBodyText) normalized.extraBodyText = normalized.stream ? DEFAULT_STREAM_EXTRA_BODY_TEXT : ''
+  if (typeof normalized.thinkingBudgetText !== 'string') normalized.thinkingBudgetText = ''
 
-  return normalized
+  return normalizeAgentExtraBodyText(normalized)
 }
 
 function normalizeChatMessage(message: unknown): ChatMessage | null {

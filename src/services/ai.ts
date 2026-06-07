@@ -1,6 +1,5 @@
 import type { AbortablePromise, AgentConfig, ChatMessage, RunResult, VisualAttachment } from '../types'
 import { parseAgentRequestConfig } from './jsonConfig'
-import { applyThinkingConfig } from './thinking'
 import { visionDetailForRequest } from './visualAttachments'
 
 function renderTemplate(template: string, input: string): string {
@@ -49,16 +48,15 @@ function buildUserContent(agent: AgentConfig, input: string, attachments: Visual
   return parts
 }
 
-function applyStreamConfig(
-  extraBody: Record<string, unknown> | undefined,
-  stream: boolean
-): Record<string, unknown> | undefined {
-  const merged = extraBody ? { ...extraBody } : {}
-  delete merged.stream
+function shouldStream(extraBody: Record<string, unknown> | undefined): boolean {
+  return extraBody?.stream === true
+}
 
-  if (stream) merged.stream = true
-
-  return Object.keys(merged).length > 0 ? merged : undefined
+function extraBodyForRequest(extraBody: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!extraBody) return undefined
+  const requestExtraBody = { ...extraBody }
+  delete requestExtraBody.stream
+  return Object.keys(requestExtraBody).length > 0 ? requestExtraBody : undefined
 }
 
 async function runCompletion(
@@ -68,9 +66,10 @@ async function runCompletion(
   onRequest?: (request: AbortablePromise<unknown>) => void
 ): Promise<RunResult> {
   const { headers, extraBody } = parseAgentRequestConfig(agent.headersText, agent.extraBodyText)
-  const requestBody = applyStreamConfig(applyThinkingConfig(agent, extraBody), agent.stream)
+  const stream = shouldStream(extraBody)
+  const requestExtraBody = extraBodyForRequest(extraBody)
 
-  if (agent.stream) {
+  if (stream) {
     let content = ''
     let reasoning = ''
     const request = window.ztools.ai(
@@ -78,7 +77,7 @@ async function runCompletion(
         model: agent.model || undefined,
         messages: messages as unknown as ZToolsAiMessage[],
         headers,
-        extraBody: requestBody
+        extraBody: requestExtraBody
       },
       (chunk) => {
         content += chunk.content || ''
@@ -95,7 +94,7 @@ async function runCompletion(
     model: agent.model || undefined,
     messages: messages as unknown as ZToolsAiMessage[],
     headers,
-    extraBody: requestBody
+    extraBody: requestExtraBody
   })
   onRequest?.(request as AbortablePromise<unknown>)
   const response = await request

@@ -25,6 +25,9 @@ export function parseAgentRequestConfig(
 ): ValidationResult {
   const rawHeaders = parseJsonObject(headersText, 'Headers')
   const extraBody = parseJsonObject(extraBodyText, 'Extra body')
+  if (extraBody && 'stream' in extraBody && typeof extraBody.stream !== 'boolean') {
+    throw new Error('Extra body stream 必须是 boolean')
+  }
   const headers = rawHeaders
     ? Object.fromEntries(
         Object.entries(rawHeaders).map(([key, value]) => [key, String(value)])

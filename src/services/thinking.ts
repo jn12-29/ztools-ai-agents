@@ -51,16 +51,33 @@ const OPENAI_GPT_5_PRO_EFFORT_OPTIONS: SelectOption<ThinkingEffort>[] = [
 
 const DEEPSEEK_EFFORT_OPTIONS: SelectOption<ThinkingEffort>[] = [
   { value: '', label: '默认' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
-  { value: 'xhigh', label: 'XHigh' },
   { value: 'max', label: 'Max' }
 ]
 
 const GEMINI_EFFORT_OPTIONS: SelectOption<ThinkingEffort>[] = [
   { value: '', label: '默认' },
+  { value: 'low', label: 'Low' },
+  { value: 'high', label: 'High' }
+]
+
+const GEMINI_2_5_FLASH_EFFORT_OPTIONS: SelectOption<ThinkingEffort>[] = [
+  { value: '', label: '默认' },
   { value: 'none', label: 'None' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' }
+]
+
+const GEMINI_2_5_PRO_EFFORT_OPTIONS: SelectOption<ThinkingEffort>[] = [
+  { value: '', label: '默认' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' }
+]
+
+const GEMINI_3_FLASH_EFFORT_OPTIONS: SelectOption<ThinkingEffort>[] = [
+  { value: '', label: '默认' },
   { value: 'minimal', label: 'Minimal' },
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
@@ -118,7 +135,7 @@ export function getThinkingEffortOptions(provider: ThinkingProvider, model: stri
   }
 
   if (resolvedProvider === 'deepseek') return DEEPSEEK_EFFORT_OPTIONS
-  if (resolvedProvider === 'gemini') return GEMINI_EFFORT_OPTIONS
+  if (resolvedProvider === 'gemini') return getGeminiEffortOptions(model)
   return [{ value: '', label: '默认' }]
 }
 
@@ -139,6 +156,15 @@ function getOpenAiEffortOptions(model: string): SelectOption<ThinkingEffort>[] {
   return OPENAI_EFFORT_OPTIONS
 }
 
+function getGeminiEffortOptions(model: string): SelectOption<ThinkingEffort>[] {
+  const normalized = normalizedModelId(model)
+  if (normalized.includes('gemini-3') && normalized.includes('flash')) return GEMINI_3_FLASH_EFFORT_OPTIONS
+  if (normalized.includes('gemini-3')) return GEMINI_EFFORT_OPTIONS
+  if (normalized.includes('gemini-2.5') && normalized.includes('pro')) return GEMINI_2_5_PRO_EFFORT_OPTIONS
+  if (normalized.includes('gemini-2.5')) return GEMINI_2_5_FLASH_EFFORT_OPTIONS
+  return GEMINI_EFFORT_OPTIONS
+}
+
 export function supportsThinkingEffort(provider: ThinkingProvider, model: string): boolean {
   const resolvedProvider = resolveThinkingProvider(provider, model)
   return resolvedProvider === 'openai' || resolvedProvider === 'deepseek' || resolvedProvider === 'gemini'
@@ -154,9 +180,50 @@ export function supportsThinkingBudget(provider: ThinkingProvider, model: string
   return resolvedProvider === 'qwen' || resolvedProvider === 'gemini'
 }
 
-function resolveSupportedEffort(provider: ThinkingProvider, model: string, effort: ThinkingEffort): ThinkingEffort {
+export function resolveThinkingEffort(provider: ThinkingProvider, model: string, effort: ThinkingEffort): ThinkingEffort {
+  const resolvedProvider = resolveThinkingProvider(provider, model)
+  if (resolvedProvider === 'deepseek') return resolveDeepSeekEffort(effort)
+  if (resolvedProvider === 'gemini') return resolveGeminiEffort(model, effort)
   if (!effort) return ''
   return getThinkingEffortOptions(provider, model).some((option) => option.value === effort) ? effort : ''
+}
+
+function resolveDeepSeekEffort(effort: ThinkingEffort): '' | 'high' | 'max' {
+  if (effort === 'max' || effort === 'xhigh') return 'max'
+  if (effort === 'low' || effort === 'medium' || effort === 'high') return 'high'
+  return ''
+}
+
+function resolveGeminiEffort(model: string, effort: ThinkingEffort): ThinkingEffort {
+  if (!effort) return ''
+  const normalized = normalizedModelId(model)
+
+  if (normalized.includes('gemini-3') && normalized.includes('flash')) {
+    return effort === 'minimal' || effort === 'low' || effort === 'medium' || effort === 'high' ? effort : ''
+  }
+
+  if (normalized.includes('gemini-3')) {
+    if (effort === 'minimal' || effort === 'low') return 'low'
+    if (effort === 'high') return 'high'
+    return ''
+  }
+
+  if (normalized.includes('gemini-2.5') && normalized.includes('pro')) {
+    if (effort === 'minimal' || effort === 'low') return 'low'
+    if (effort === 'medium' || effort === 'high') return effort
+    return ''
+  }
+
+  if (normalized.includes('gemini-2.5')) {
+    if (effort === 'none') return 'none'
+    if (effort === 'minimal' || effort === 'low') return 'low'
+    if (effort === 'medium' || effort === 'high') return effort
+    return ''
+  }
+
+  if (effort === 'minimal' || effort === 'low') return 'low'
+  if (effort === 'high') return 'high'
+  return ''
 }
 
 export function parseThinkingBudgetText(text: string): number | undefined {
@@ -249,23 +316,24 @@ function mergeGeminiThinkingConfig(
 
 export function applyThinkingConfig(
   agent: AgentConfig,
-  extraBody?: Record<string, unknown>
+  extraBody?: Record<string, unknown>,
+  forceClean = false
 ): Record<string, unknown> | undefined {
   const provider = resolveThinkingProvider(agent.thinkingProvider, agent.model)
   if (provider === 'auto') {
-    if (agent.thinkingMode !== 'off') return extraBody
+    if (!forceClean && agent.thinkingMode !== 'off') return extraBody
 
     const merged = withExtraBody(extraBody)
     removeThinkingKeys(merged)
     return Object.keys(merged).length > 0 ? merged : undefined
   }
 
-  const effort = resolveSupportedEffort(agent.thinkingProvider, agent.model, agent.thinkingEffort)
+  const effort = resolveThinkingEffort(agent.thinkingProvider, agent.model, agent.thinkingEffort)
   const usesBudget = supportsThinkingBudget(agent.thinkingProvider, agent.model) && agent.thinkingMode !== 'off'
   const hasThinkingOverride =
     agent.thinkingMode !== 'default' || Boolean(effort) || (usesBudget && Boolean(agent.thinkingBudgetText.trim()))
 
-  if (!hasThinkingOverride) return extraBody
+  if (!hasThinkingOverride && !forceClean) return extraBody
 
   const budget = usesBudget ? parseThinkingBudgetText(agent.thinkingBudgetText) : undefined
   if (provider === 'qwen' && budget !== undefined && budget <= 0) {
@@ -292,7 +360,7 @@ export function applyThinkingConfig(
     if (agent.thinkingMode === 'on') merged.thinking = { type: 'enabled' }
     if (agent.thinkingMode === 'off') merged.thinking = { type: 'disabled' }
     if (agent.thinkingMode !== 'off' && effort) {
-      merged.reasoning_effort = effort === 'max' || effort === 'xhigh' ? 'max' : 'high'
+      merged.reasoning_effort = effort
     }
   }
 

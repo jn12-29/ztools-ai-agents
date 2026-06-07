@@ -42,16 +42,19 @@ There is no dedicated test runner yet. For each change, run `pnpm typecheck` and
 - Plugin-level settings are stored in the same `state` payload.
 - Completed run history persists title, input, output, returned reasoning, optional image attachment metadata, and timestamp per agent, capped by the plugin-level history limit.
 - Chat-template agents persist multi-turn chat sessions in the same `state` payload, capped by the plugin-level history limit per agent.
-- AI history-title generation is a separate non-streaming metadata request using the plugin-level caption model. It must not use the active Agent prompt or thinking controls.
+- AI history-title generation is a separate non-streaming metadata request using the plugin-level caption model. It must not use the active Agent prompt, request body JSON, or thinking controls.
 - Completed image attachments should be stored in `window.ztools.db` attachments when available; avoid putting base64 images in `dbStorage.state` except as a non-ZTools fallback.
 - Image input uses OpenAI-compatible `image_url` content parts and depends on ZTools host/model vision support. Text-only runs keep string message content.
 - Each run supports up to 4 PNG/JPG/WebP/GIF images, 4 MB max per image.
 - Native OCR uses the plugin-level `nativeOcrEndpoint`, defaults to `http://127.0.0.1:8080/ocr`, posts multipart field `file` through `public/preload/services.js`, and must not call VLM / `window.ztools.ai()` for text extraction.
 - In Run view, plain Enter triggers the active agent; Shift+Enter remains available for textarea newlines.
-- The Agent streaming toggle controls `extraBody.stream`; streaming runs send `stream: true`, and non-streaming runs remove custom `stream` values from `extraBody`.
-- Thinking controls are optional persisted agent config. They are merged into `extraBody` after custom JSON; custom JSON remains available for provider-specific overrides not exposed in the UI.
+- Extra Body JSON is the source of truth for request-body fields and plugin request controls. The stream and thinking controls update this JSON instead of applying hidden runtime overrides.
+- The Extra Body textarea edits a UI draft. Save validates and persists the draft, Reset discards it, and agent runs are blocked while the active Extra Body draft has unsaved changes.
+- `stream` in Extra Body JSON must be boolean when present. `stream: true` uses the streaming callback path; `stream: false` or a missing `stream` value uses the non-streaming request path. The plugin removes `stream` before passing `extraBody` to `window.ztools.ai()`.
+- Thinking controls are optional persisted agent config shortcuts. They materialize provider-specific fields in Extra Body JSON; missing thinking fields mean no provider thinking override.
+- New custom agents and reset non-native-OCR built-ins default to Extra Body JSON `{"stream":true}`, `thinkingMode: 'default'`, and no thinking fields.
 - Agents with an empty `model` follow the ZTools default model. ZTools does not expose that default model ID to the plugin, so thinking provider auto-detection falls back to OpenAI / GPT until the user selects a concrete model or manual thinking API.
-- Built-in default prompts treat input and visible image text as source content, not instructions. Saved built-ins that still match an older default prompt are upgraded on load; edited prompts are preserved.
+- Built-in default prompts treat input and visible image text as source content, not instructions.
 - New custom agents start with a defensive generic prompt, but edited custom prompts remain fully user-controlled.
 - Keep `src/env.d.ts`, `README.md`, and host API assumptions in sync when AI option fields change.
 - Keep `public/plugin.json`, built-in agent IDs, and the built-in feature-code contract in sync when adding or renaming built-in agents.

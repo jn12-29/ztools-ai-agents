@@ -49,7 +49,6 @@ import { runAgent, runChatAgent } from './services/ai'
 import { runNativeOcr } from './services/nativeOcr'
 import {
   THINKING_PROVIDER_OPTIONS,
-  applyThinkingConfig,
   getThinkingEffortOptions,
   getThinkingModeOptions,
   resolveThinkingProvider,
@@ -57,6 +56,11 @@ import {
   supportsThinkingEffort,
   supportsThinkingMode
 } from './services/thinking'
+import {
+  DEFAULT_STREAM_EXTRA_BODY_TEXT,
+  syncAgentControlsFromExtraBodyText,
+  syncAgentExtraBodyTextFromControls
+} from './services/requestBody'
 import {
   featureCodeForAgent,
   findAgentByFeatureCode,
@@ -86,6 +90,10 @@ const visualAttachments = ref<VisualAttachment[]>([])
 const historyQuery = ref('')
 const currentChatSessionId = ref('')
 const currentRequest = ref<AbortablePromise<unknown> | null>(null)
+const extraBodyDrafts = reactive<Record<string, { text: string; baseText: string }>>({})
+const extraBodyDraftAgentId = ref('')
+const extraBodyDraftText = ref('')
+const extraBodyDraftBaseText = ref('')
 const thinkingModeOptions = getThinkingModeOptions()
 
 const effectiveSettings = computed(() => normalizePluginSettings(state.settings))
@@ -145,6 +153,15 @@ const canSetThinkingBudget = computed(() => {
 const canSetThinkingMode = computed(() => {
   if (!activeAgent.value) return false
   return supportsThinkingMode(activeAgent.value.thinkingProvider, activeAgent.value.model)
+})
+
+const hasActiveExtraBodyDraftChanges = computed(() => {
+  const agent = activeAgent.value
+  return Boolean(
+    agent &&
+      extraBodyDraftAgentId.value === agent.id &&
+      extraBodyDraftText.value !== extraBodyDraftBaseText.value
+  )
 })
 
 const activeAgentHistory = computed(() => {
@@ -516,12 +533,12 @@ function addAgent(): void {
     allowVision: true,
     visionDetail: 'auto',
     thinkingProvider: 'auto',
-    thinkingMode: 'off',
+    thinkingMode: 'default',
     thinkingEffort: '',
     thinkingBudgetText: '',
     outputAction: 'show',
     headersText: '',
-    extraBodyText: '',
+    extraBodyText: DEFAULT_STREAM_EXTRA_BODY_TEXT,
     featureEnabled: true,
     builtIn: false
   }
@@ -549,6 +566,7 @@ function deleteAgent(agent: AgentConfig): void {
   if (index < 0) return
   window.ztools.removeFeature(featureCodeForAgent(agent))
   state.agents.splice(index, 1)
+  delete extraBodyDrafts[agent.id]
   removeHistoryAttachments(state.history.filter((record) => record.agentId === agent.id))
   state.history = state.history.filter((record) => record.agentId !== agent.id)
   state.activeAgentId = state.agents[0]?.id || ''
@@ -560,20 +578,117 @@ function resetBuiltInAgent(agent: AgentConfig): void {
   const fresh = createDefaultAgents().find((item) => item.id === agent.id)
   if (!fresh) return
   Object.assign(agent, fresh, { model: agent.model })
+  setExtraBodyDraftFromAgent(agent)
+  syncRequestJsonFromControls(agent)
 }
 
-function validateJsonFields(agent: AgentConfig): boolean {
+function setExtraBodyDraftFromAgent(agent: AgentConfig | null, preserveExisting = false): void {
+  if (extraBodyDraftAgentId.value && extraBodyDraftAgentId.value !== agent?.id) {
+    extraBodyDrafts[extraBodyDraftAgentId.value] = {
+      text: extraBodyDraftText.value,
+      baseText: extraBodyDraftBaseText.value
+    }
+  }
+
+  extraBodyDraftAgentId.value = agent?.id || ''
+  if (!agent) {
+    extraBodyDraftText.value = ''
+    extraBodyDraftBaseText.value = ''
+    return
+  }
+
+  const savedText = agent.extraBodyText || ''
+  const existingDraft = preserveExisting ? extraBodyDrafts[agent.id] : undefined
+  const draft =
+    existingDraft && existingDraft.baseText === savedText
+      ? existingDraft
+      : { text: savedText, baseText: savedText }
+
+  extraBodyDrafts[agent.id] = draft
+  extraBodyDraftText.value = draft.text
+  extraBodyDraftBaseText.value = draft.baseText
+}
+
+function isExtraBodyDraftForAgent(agent: AgentConfig): boolean {
+  return extraBodyDraftAgentId.value === agent.id
+}
+
+function hasUnsavedExtraBodyDraft(agent: AgentConfig): boolean {
+  return isExtraBodyDraftForAgent(agent) && extraBodyDraftText.value !== extraBodyDraftBaseText.value
+}
+
+function extraBodyTextForValidation(agent: AgentConfig): string {
+  return isExtraBodyDraftForAgent(agent) ? extraBodyDraftText.value : agent.extraBodyText
+}
+
+function ensureSavedExtraBodyDraft(agent: AgentConfig): boolean {
+  if (!hasUnsavedExtraBodyDraft(agent)) return true
+  error.value = 'Extra Body JSON 有未保存修改，请先保存或还原'
+  status.value = ''
+  return false
+}
+
+function syncRequestJsonFromControls(agent: AgentConfig): void {
+  if (!ensureSavedExtraBodyDraft(agent)) return
   try {
-    const { extraBody } = parseAgentRequestConfig(agent.headersText, agent.extraBodyText)
-    applyThinkingConfig(agent, extraBody)
+    syncAgentExtraBodyTextFromControls(agent)
+    setExtraBodyDraftFromAgent(agent)
     error.value = ''
-    status.value = 'JSON 配置有效'
+    status.value = ''
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+    status.value = ''
+  }
+}
+
+function syncControlsFromRequestJson(agent: AgentConfig, showStatus = false): boolean {
+  if (!ensureSavedExtraBodyDraft(agent)) return false
+  try {
+    parseAgentRequestConfig(agent.headersText, agent.extraBodyText)
+    syncAgentControlsFromExtraBodyText(agent)
+    error.value = ''
+    if (showStatus) status.value = 'JSON 配置有效'
     return true
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
     status.value = ''
     return false
   }
+}
+
+function validateJsonFields(agent: AgentConfig): boolean {
+  try {
+    parseAgentRequestConfig(agent.headersText, extraBodyTextForValidation(agent))
+    error.value = ''
+    status.value = hasUnsavedExtraBodyDraft(agent) ? 'JSON 配置有效，Extra Body 未保存' : 'JSON 配置有效'
+    return true
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+    status.value = ''
+    return false
+  }
+}
+
+function applyExtraBodyDraft(agent: AgentConfig): boolean {
+  try {
+    parseAgentRequestConfig(agent.headersText, extraBodyDraftText.value)
+    agent.extraBodyText = extraBodyDraftText.value
+    syncAgentControlsFromExtraBodyText(agent)
+    setExtraBodyDraftFromAgent(agent)
+    error.value = ''
+    status.value = 'Extra Body JSON 已保存'
+    return true
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+    status.value = ''
+    return false
+  }
+}
+
+function resetExtraBodyDraft(agent: AgentConfig): void {
+  setExtraBodyDraftFromAgent(agent)
+  error.value = ''
+  status.value = '已还原 Extra Body JSON'
 }
 
 async function loadModels(): Promise<void> {
@@ -728,6 +843,8 @@ async function runStandardSelectedAgent(agent: AgentConfig, autoInput?: string):
     return
   }
 
+  if (!syncControlsFromRequestJson(agent)) return
+
   output.value = ''
   reasoning.value = ''
   error.value = ''
@@ -783,6 +900,8 @@ async function runChatSelectedAgent(agent: AgentConfig, autoInput?: string): Pro
     openModelSettings()
     return
   }
+
+  if (!syncControlsFromRequestJson(agent)) return
 
   const session = ensureChatSession(agent)
   const previousMessages = [...session.messages]
@@ -954,6 +1073,28 @@ function handleEnter(action: LaunchAction): void {
     nextTick(() => runSelectedAgent(payloadText))
   }
 }
+
+watch(
+  () => activeAgent.value?.id,
+  () => setExtraBodyDraftFromAgent(activeAgent.value, true),
+  { immediate: true }
+)
+
+watch(
+  () => activeAgent.value?.extraBodyText,
+  (text) => {
+    const agent = activeAgent.value
+    if (!agent || extraBodyDraftAgentId.value !== agent.id) return
+    if (extraBodyDraftText.value !== extraBodyDraftBaseText.value) return
+    const nextText = text || ''
+    extraBodyDrafts[agent.id] = {
+      text: nextText,
+      baseText: nextText
+    }
+    extraBodyDraftText.value = nextText
+    extraBodyDraftBaseText.value = nextText
+  }
+)
 
 watch(
   state,
@@ -1154,7 +1295,12 @@ onUnmounted(() => {
                 </button>
                 <div class="run-model-field" :title="`当前模型：${modelLabel}`">
                   <span>模型</span>
-                  <select v-model="activeAgent.model" @focus="refreshModels">
+                  <select
+                    v-model="activeAgent.model"
+                    :disabled="hasActiveExtraBodyDraftChanges"
+                    @focus="refreshModels"
+                    @change="syncRequestJsonFromControls(activeAgent)"
+                  >
                     <option value="">跟随 ZTools 默认模型</option>
                     <option v-for="model in models" :key="model.id" :value="model.id">
                       {{ model.label || model.id }}
@@ -1359,7 +1505,12 @@ onUnmounted(() => {
             </button>
             <div class="run-model-field" :title="`当前模型：${modelLabel}`">
               <span>模型</span>
-              <select v-model="activeAgent.model" @focus="refreshModels">
+              <select
+                v-model="activeAgent.model"
+                :disabled="hasActiveExtraBodyDraftChanges"
+                @focus="refreshModels"
+                @change="syncRequestJsonFromControls(activeAgent)"
+              >
                 <option value="">跟随 ZTools 默认模型</option>
                 <option v-for="model in models" :key="model.id" :value="model.id">
                   {{ model.label || model.id }}
@@ -1467,7 +1618,11 @@ onUnmounted(() => {
             <div v-if="!isNativeOcrTemplate" class="field-stack model-field">
               <span>模型</span>
               <div class="inline-field">
-                <select v-model="activeAgent.model">
+                <select
+                  v-model="activeAgent.model"
+                  :disabled="hasActiveExtraBodyDraftChanges"
+                  @change="syncRequestJsonFromControls(activeAgent)"
+                >
                   <option value="">跟随 ZTools 默认模型</option>
                   <option v-for="model in models" :key="model.id" :value="model.id">
                     {{ model.label || model.id }}
@@ -1491,7 +1646,12 @@ onUnmounted(() => {
             <span class="section-title">运行行为</span>
             <div class="settings-toggles">
               <label v-if="!isNativeOcrTemplate" class="toggle">
-                <input v-model="activeAgent.stream" type="checkbox" />
+                <input
+                  v-model="activeAgent.stream"
+                  type="checkbox"
+                  :disabled="hasActiveExtraBodyDraftChanges"
+                  @change="syncRequestJsonFromControls(activeAgent)"
+                />
                 <span>流式</span>
               </label>
               <label v-if="!isNativeOcrTemplate" class="toggle">
@@ -1530,7 +1690,12 @@ onUnmounted(() => {
             <div class="settings-fields thinking-fields">
               <label>
                 思考接口
-                <select v-model="activeAgent.thinkingProvider" :title="`Detected: ${effectiveThinkingProvider}`">
+                <select
+                  v-model="activeAgent.thinkingProvider"
+                  :title="`Detected: ${effectiveThinkingProvider}`"
+                  :disabled="hasActiveExtraBodyDraftChanges"
+                  @change="syncRequestJsonFromControls(activeAgent)"
+                >
                   <option v-for="option in THINKING_PROVIDER_OPTIONS" :key="option.value" :value="option.value">
                     {{ option.label }}
                   </option>
@@ -1538,7 +1703,11 @@ onUnmounted(() => {
               </label>
               <label>
                 是否思考
-                <select v-model="activeAgent.thinkingMode" :disabled="!canSetThinkingMode">
+                <select
+                  v-model="activeAgent.thinkingMode"
+                  :disabled="!canSetThinkingMode || hasActiveExtraBodyDraftChanges"
+                  @change="syncRequestJsonFromControls(activeAgent)"
+                >
                   <option v-for="option in thinkingModeOptions" :key="option.value" :value="option.value">
                     {{ option.label }}
                   </option>
@@ -1548,7 +1717,8 @@ onUnmounted(() => {
                 思考强度
                 <select
                   v-model="activeAgent.thinkingEffort"
-                  :disabled="!canSetThinkingEffort || activeAgent.thinkingMode === 'off'"
+                  :disabled="!canSetThinkingEffort || activeAgent.thinkingMode === 'off' || hasActiveExtraBodyDraftChanges"
+                  @change="syncRequestJsonFromControls(activeAgent)"
                 >
                   <option v-for="option in thinkingEffortOptions" :key="option.value || 'default'" :value="option.value">
                     {{ option.label }}
@@ -1559,9 +1729,10 @@ onUnmounted(() => {
                 思考预算
                 <input
                   v-model="activeAgent.thinkingBudgetText"
-                  :disabled="activeAgent.thinkingMode === 'off'"
+                  :disabled="activeAgent.thinkingMode === 'off' || hasActiveExtraBodyDraftChanges"
                   inputmode="numeric"
                   placeholder="整数"
+                  @change="syncRequestJsonFromControls(activeAgent)"
                 />
               </label>
             </div>
@@ -1589,10 +1760,29 @@ onUnmounted(() => {
           <section v-if="!isNativeOcrTemplate" class="panel request-panel">
           <div class="panel-header">
             <span>请求</span>
-            <button class="ghost-button" @click="validateJsonFields(activeAgent)">
-              <Check :size="15" />
-              验证
-            </button>
+            <div class="header-actions">
+              <span v-if="hasActiveExtraBodyDraftChanges" class="status-text">未保存</span>
+              <button class="ghost-button" @click="validateJsonFields(activeAgent)">
+                <Check :size="15" />
+                验证
+              </button>
+              <button
+                class="ghost-button"
+                :disabled="!hasActiveExtraBodyDraftChanges"
+                @click="resetExtraBodyDraft(activeAgent)"
+              >
+                <RefreshCw :size="15" />
+                还原
+              </button>
+              <button
+                class="ghost-button"
+                :disabled="!hasActiveExtraBodyDraftChanges"
+                @click="applyExtraBodyDraft(activeAgent)"
+              >
+                <Check :size="15" />
+                保存
+              </button>
+            </div>
           </div>
 
           <label>
@@ -1608,10 +1798,10 @@ onUnmounted(() => {
           <label>
             Extra Body JSON
             <textarea
-              v-model="activeAgent.extraBodyText"
+              v-model="extraBodyDraftText"
               class="request-textarea"
               spellcheck="false"
-              placeholder='{"enable_thinking":true}'
+              placeholder='{"stream":true,"enable_thinking":true}'
             />
           </label>
           </section>
