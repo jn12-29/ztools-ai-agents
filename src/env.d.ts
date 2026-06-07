@@ -12,9 +12,25 @@ interface ZToolsAiOption {
   extraBody?: Record<string, unknown>
 }
 
+interface AiAgentsImagePayload {
+  name: string
+  mimeType: string
+  dataUrl: string
+  sizeBytes: number
+}
+
+interface AiAgentsNativeOcrResponse {
+  texts: string[]
+  scores: number[]
+  boxes: unknown[]
+}
+
 interface Window {
   aiAgentsServices?: {
     version: string
     readClipboardText(): string
+    readClipboardImage(): AiAgentsImagePayload | null
+    readImageFile(filePath: string): AiAgentsImagePayload
+    runNativeOcr(endpoint: string, image: AiAgentsImagePayload): Promise<AiAgentsNativeOcrResponse>
   }
 }

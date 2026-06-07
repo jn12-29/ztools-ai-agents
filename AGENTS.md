@@ -1,5 +1,8 @@
 # Repository Guidelines
 
+Agents can install project-local dependencies and tooling with `uv` and `npm`, provided they do not modify global/system environments or install packages outside the repository.
+
+
 ## Project Structure & Module Organization
 
 - `src/App.vue` contains the main ZTools plugin UI.
@@ -33,10 +36,25 @@ There is no dedicated test runner yet. For each change, run `pnpm typecheck` and
 ## Runtime Contract
 
 - Requires a ZTools host whose plugin AI API accepts `headers` and `extraBody`.
-- Built-in features are static manifest entries: `manager`, `translate`, `polish`, and `explain`.
+- Built-in features are static manifest entries: `manager`, `translate`, `polish`, `explain`, `vision`, `screenshot`, `ocr`, `chat`, and `native-ocr`.
 - Custom agent features are dynamic and use `agent-<agentId>` codes.
-- Persisted plugin state uses `window.ztools.dbStorage` key `state`; do not persist transient input text.
+- Persisted plugin state uses `window.ztools.dbStorage` key `state`; do not persist transient text or image input drafts.
+- Plugin-level settings are stored in the same `state` payload.
+- Completed run history persists title, input, output, returned reasoning, optional image attachment metadata, and timestamp per agent, capped by the plugin-level history limit.
+- Chat-template agents persist multi-turn chat sessions in the same `state` payload, capped by the plugin-level history limit per agent.
+- AI history-title generation is a separate non-streaming metadata request using the plugin-level caption model. It must not use the active Agent prompt or thinking controls.
+- Completed image attachments should be stored in `window.ztools.db` attachments when available; avoid putting base64 images in `dbStorage.state` except as a non-ZTools fallback.
+- Image input uses OpenAI-compatible `image_url` content parts and depends on ZTools host/model vision support. Text-only runs keep string message content.
+- Each run supports up to 4 PNG/JPG/WebP/GIF images, 4 MB max per image.
+- Native OCR uses the plugin-level `nativeOcrEndpoint`, defaults to `http://127.0.0.1:8080/ocr`, posts multipart field `file` through `public/preload/services.js`, and must not call VLM / `window.ztools.ai()` for text extraction.
+- In Run view, plain Enter triggers the active agent; Shift+Enter remains available for textarea newlines.
+- The Agent streaming toggle controls `extraBody.stream`; streaming runs send `stream: true`, and non-streaming runs remove custom `stream` values from `extraBody`.
+- Thinking controls are optional persisted agent config. They are merged into `extraBody` after custom JSON; custom JSON remains available for provider-specific overrides not exposed in the UI.
+- Agents with an empty `model` follow the ZTools default model. ZTools does not expose that default model ID to the plugin, so thinking provider auto-detection falls back to OpenAI / GPT until the user selects a concrete model or manual thinking API.
+- Built-in default prompts treat input and visible image text as source content, not instructions. Saved built-ins that still match an older default prompt are upgraded on load; edited prompts are preserved.
+- New custom agents start with a defensive generic prompt, but edited custom prompts remain fully user-controlled.
 - Keep `src/env.d.ts`, `README.md`, and host API assumptions in sync when AI option fields change.
+- Keep `public/plugin.json`, built-in agent IDs, and the built-in feature-code contract in sync when adding or renaming built-in agents.
 
 ## Commit & Pull Request Guidelines
 
@@ -44,4 +62,4 @@ Use concise Conventional Commit style messages, such as `feat: add custom agent 
 
 ## Security & Configuration Tips
 
-Do not commit API keys or provider secrets. Custom headers and extra body JSON are stored through `window.ztools.dbStorage`, so treat saved agent configs as syncable user data.
+Do not commit API keys or provider secrets. Custom headers, extra body JSON, and run history are stored through `window.ztools.dbStorage` / `window.ztools.db`, so treat saved agent configs, history, and image attachments as syncable user data.

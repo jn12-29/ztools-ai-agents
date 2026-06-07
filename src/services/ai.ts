@@ -1,27 +1,74 @@
-import type { AbortablePromise, AgentConfig, RunResult } from '../types'
+import type { AbortablePromise, AgentConfig, ChatMessage, RunResult, VisualAttachment } from '../types'
 import { parseAgentRequestConfig } from './jsonConfig'
+import { applyThinkingConfig } from './thinking'
+import { visionDetailForRequest } from './visualAttachments'
 
 function renderTemplate(template: string, input: string): string {
   return template.includes('{{input}}') ? template.split('{{input}}').join(input) : `${template}\n\n${input}`
 }
 
-export async function runAgent(
+type UserContentPart =
+  | {
+      type: 'text'
+      text: string
+    }
+  | {
+      type: 'image_url'
+      image_url: {
+        url: string
+        detail?: 'low' | 'high'
+      }
+    }
+
+type AiRequestMessage = {
+  role: 'system' | 'user' | 'assistant'
+  content: string | UserContentPart[]
+}
+
+function buildUserContent(agent: AgentConfig, input: string, attachments: VisualAttachment[]): string | UserContentPart[] {
+  const text = renderTemplate(agent.userTemplate, input)
+  if (attachments.length === 0) return text
+
+  const detail = visionDetailForRequest(agent.visionDetail)
+  const parts: UserContentPart[] = []
+  parts.push({
+    type: 'text',
+    text: text.trim() || 'Please process the attached image(s) according to the system prompt.'
+  })
+
+  for (const attachment of attachments) {
+    parts.push({
+      type: 'image_url',
+      image_url: {
+        url: attachment.dataUrl,
+        ...(detail ? { detail } : {})
+      }
+    })
+  }
+
+  return parts
+}
+
+function applyStreamConfig(
+  extraBody: Record<string, unknown> | undefined,
+  stream: boolean
+): Record<string, unknown> | undefined {
+  const merged = extraBody ? { ...extraBody } : {}
+  delete merged.stream
+
+  if (stream) merged.stream = true
+
+  return Object.keys(merged).length > 0 ? merged : undefined
+}
+
+async function runCompletion(
   agent: AgentConfig,
-  input: string,
+  messages: AiRequestMessage[],
   onChunk: (chunk: RunResult) => void,
   onRequest?: (request: AbortablePromise<unknown>) => void
 ): Promise<RunResult> {
   const { headers, extraBody } = parseAgentRequestConfig(agent.headersText, agent.extraBodyText)
-  const messages = [
-    {
-      role: 'system' as const,
-      content: agent.systemPrompt
-    },
-    {
-      role: 'user' as const,
-      content: renderTemplate(agent.userTemplate, input)
-    }
-  ]
+  const requestBody = applyStreamConfig(applyThinkingConfig(agent, extraBody), agent.stream)
 
   if (agent.stream) {
     let content = ''
@@ -29,9 +76,9 @@ export async function runAgent(
     const request = window.ztools.ai(
       {
         model: agent.model || undefined,
-        messages,
+        messages: messages as unknown as ZToolsAiMessage[],
         headers,
-        extraBody
+        extraBody: requestBody
       },
       (chunk) => {
         content += chunk.content || ''
@@ -46,9 +93,9 @@ export async function runAgent(
 
   const request = window.ztools.ai({
     model: agent.model || undefined,
-    messages,
+    messages: messages as unknown as ZToolsAiMessage[],
     headers,
-    extraBody
+    extraBody: requestBody
   })
   onRequest?.(request as AbortablePromise<unknown>)
   const response = await request
@@ -57,4 +104,64 @@ export async function runAgent(
     content: response.content || '',
     reasoning: response.reasoning_content || ''
   }
+}
+
+export async function runAgent(
+  agent: AgentConfig,
+  input: string,
+  attachments: VisualAttachment[],
+  onChunk: (chunk: RunResult) => void,
+  onRequest?: (request: AbortablePromise<unknown>) => void
+): Promise<RunResult> {
+  if (attachments.length > 0 && !agent.allowVision) {
+    throw new Error('当前 Agent 未开启图片输入')
+  }
+
+  return runCompletion(
+    agent,
+    [
+      {
+        role: 'system',
+        content: agent.systemPrompt
+      },
+      {
+        role: 'user',
+        content: buildUserContent(agent, input, attachments)
+      }
+    ],
+    onChunk,
+    onRequest
+  )
+}
+
+export async function runChatAgent(
+  agent: AgentConfig,
+  previousMessages: ChatMessage[],
+  input: string,
+  attachments: VisualAttachment[],
+  onChunk: (chunk: RunResult) => void,
+  onRequest?: (request: AbortablePromise<unknown>) => void
+): Promise<RunResult> {
+  if (attachments.length > 0 && !agent.allowVision) {
+    throw new Error('当前 Agent 未开启图片输入')
+  }
+
+  const messages: AiRequestMessage[] = [
+    {
+      role: 'system',
+      content: agent.systemPrompt
+    },
+    ...previousMessages
+      .filter((message) => message.content.trim())
+      .map((message): AiRequestMessage => ({
+        role: message.role,
+        content: message.content
+      })),
+    {
+      role: 'user',
+      content: buildUserContent(agent, input, attachments)
+    }
+  ]
+
+  return runCompletion(agent, messages, onChunk, onRequest)
 }

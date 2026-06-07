@@ -26,17 +26,32 @@ export function registerAgentFeatures(agents: AgentConfig[]): void {
 
     const code = featureCodeForAgent(agent)
     expectedCodes.add(code)
+    const cmds: Parameters<typeof window.ztools.setFeature>[0]['cmds'] = [
+      ...commandText(agent),
+      {
+        type: 'over',
+        label: agent.name
+      }
+    ]
+
+    if (agent.allowVision) {
+      cmds.push(
+        {
+          type: 'img',
+          label: agent.name
+        },
+        {
+          type: 'files',
+          label: agent.name
+        }
+      )
+    }
+
     window.ztools.setFeature({
       code,
       explain: agent.description || agent.name,
       icon: 'logo.png',
-      cmds: [
-        ...commandText(agent),
-        {
-          type: 'over',
-          label: agent.name
-        }
-      ]
+      cmds
     })
   }
 

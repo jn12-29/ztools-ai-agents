@@ -28,6 +28,14 @@
         {
           "type": "over",
           "label": "中英文翻译"
+        },
+        {
+          "type": "img",
+          "label": "中英文翻译"
+        },
+        {
+          "type": "files",
+          "label": "中英文翻译"
         }
       ]
     },
@@ -40,6 +48,14 @@
         "polish",
         {
           "type": "over",
+          "label": "润色转写"
+        },
+        {
+          "type": "img",
+          "label": "润色转写"
+        },
+        {
+          "type": "files",
           "label": "润色转写"
         }
       ]
@@ -54,6 +70,120 @@
         {
           "type": "over",
           "label": "中英文解读"
+        },
+        {
+          "type": "img",
+          "label": "中英文解读"
+        },
+        {
+          "type": "files",
+          "label": "中英文解读"
+        }
+      ]
+    },
+    {
+      "code": "vision",
+      "explain": "图片解读",
+      "icon": "logo.png",
+      "cmds": [
+        "看图",
+        "图片解读",
+        "vision",
+        {
+          "type": "over",
+          "label": "图片解读"
+        },
+        {
+          "type": "img",
+          "label": "图片解读"
+        },
+        {
+          "type": "files",
+          "label": "图片解读"
+        }
+      ]
+    },
+    {
+      "code": "screenshot",
+      "explain": "截图诊断",
+      "icon": "logo.png",
+      "cmds": [
+        "截图诊断",
+        "界面诊断",
+        "screenshot",
+        {
+          "type": "over",
+          "label": "截图诊断"
+        },
+        {
+          "type": "img",
+          "label": "截图诊断"
+        },
+        {
+          "type": "files",
+          "label": "截图诊断"
+        }
+      ]
+    },
+    {
+      "code": "ocr",
+      "explain": "文字识别",
+      "icon": "logo.png",
+      "cmds": [
+        "OCR",
+        "文字识别",
+        "提取文字",
+        {
+          "type": "over",
+          "label": "文字识别"
+        },
+        {
+          "type": "img",
+          "label": "文字识别"
+        },
+        {
+          "type": "files",
+          "label": "文字识别"
+        }
+      ]
+    },
+    {
+      "code": "chat",
+      "explain": "多轮对话",
+      "icon": "logo.png",
+      "cmds": [
+        "对话",
+        "聊天",
+        "chat",
+        {
+          "type": "over",
+          "label": "对话助手"
+        },
+        {
+          "type": "img",
+          "label": "对话助手"
+        },
+        {
+          "type": "files",
+          "label": "对话助手"
+        }
+      ]
+    },
+    {
+      "code": "native-ocr",
+      "explain": "本地 OCR",
+      "icon": "logo.png",
+      "cmds": [
+        "本地OCR",
+        "native ocr",
+        "RapidOCR",
+        {
+          "type": "img",
+          "label": "本地 OCR"
+        },
+        {
+          "type": "files",
+          "label": "本地 OCR"
         }
       ]
     }
