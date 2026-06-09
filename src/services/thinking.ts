@@ -11,6 +11,12 @@ const DEFAULT_MODE_OPTIONS: SelectOption<ThinkingMode>[] = [
   { value: 'off', label: '关闭' }
 ]
 
+const NO_OVERRIDE_MODE_OPTIONS: SelectOption<ThinkingMode>[] = [
+  { value: 'default', label: '默认' },
+  { value: 'on', label: '开启' },
+  { value: 'off', label: '不发送参数' }
+]
+
 const OPENAI_EFFORT_OPTIONS: SelectOption<ThinkingEffort>[] = [
   { value: '', label: '默认' },
   { value: 'none', label: 'None' },
@@ -123,8 +129,9 @@ export function resolveThinkingProvider(provider: ThinkingProvider, model: strin
   return inferThinkingProvider(model)
 }
 
-export function getThinkingModeOptions(): SelectOption<ThinkingMode>[] {
-  return DEFAULT_MODE_OPTIONS
+export function getThinkingModeOptions(provider: ThinkingProvider = 'auto', model = ''): SelectOption<ThinkingMode>[] {
+  const resolvedProvider = resolveThinkingProvider(provider, model)
+  return resolvedProvider === 'openai' || resolvedProvider === 'auto' ? NO_OVERRIDE_MODE_OPTIONS : DEFAULT_MODE_OPTIONS
 }
 
 export function getThinkingEffortOptions(provider: ThinkingProvider, model: string): SelectOption<ThinkingEffort>[] {

@@ -70,8 +70,8 @@ import {
   MAX_VISUAL_ATTACHMENTS,
   createVisualAttachment,
   formatBytes,
-  loadHistoryAttachments,
   removeHistoryAttachments,
+  restoreHistoryAttachments,
   sourceLabel,
   storeHistoryAttachments
 } from './services/visualAttachments'
@@ -85,8 +85,10 @@ const reasoning = ref('')
 const error = ref('')
 const status = ref('')
 const running = ref(false)
+const launchPending = ref(false)
 const inputText = ref('')
 const visualAttachments = ref<VisualAttachment[]>([])
+const launchAttachmentWarning = ref('')
 const historyQuery = ref('')
 const currentChatSessionId = ref('')
 const currentRequest = ref<AbortablePromise<unknown> | null>(null)
@@ -94,12 +96,16 @@ const extraBodyDrafts = reactive<Record<string, { text: string; baseText: string
 const extraBodyDraftAgentId = ref('')
 const extraBodyDraftText = ref('')
 const extraBodyDraftBaseText = ref('')
-const thinkingModeOptions = getThinkingModeOptions()
 
 const effectiveSettings = computed(() => normalizePluginSettings(state.settings))
 
 const activeAgent = computed(() => {
   return state.agents.find((agent) => agent.id === state.activeAgentId) || state.agents[0] || null
+})
+
+const thinkingModeOptions = computed(() => {
+  const agent = activeAgent.value
+  return getThinkingModeOptions(agent?.thinkingProvider || 'auto', agent?.model || '')
 })
 
 const activeRunTemplate = computed<AgentRunTemplate>(() => activeAgent.value?.runTemplate || 'standard')
@@ -436,12 +442,13 @@ async function updateAiHistoryTitle(
 }
 
 function restoreHistoryRecord(record: AgentHistoryRecord): void {
+  const restored = restoreHistoryAttachments(record.attachments)
   inputText.value = record.input
   output.value = record.output
   reasoning.value = record.reasoning
-  visualAttachments.value = loadHistoryAttachments(record.attachments)
-  error.value = ''
-  status.value = '已恢复历史'
+  visualAttachments.value = restored.attachments
+  error.value = restored.missingCount > 0 ? `部分历史图片附件已不存在（${restored.missingCount} 张）` : ''
+  status.value = restored.missingCount > 0 ? '已恢复历史，部分图片缺失' : '已恢复历史'
 }
 
 function ensureChatSession(agent: AgentConfig): ChatSession {
@@ -569,6 +576,7 @@ function deleteAgent(agent: AgentConfig): void {
   delete extraBodyDrafts[agent.id]
   removeHistoryAttachments(state.history.filter((record) => record.agentId === agent.id))
   state.history = state.history.filter((record) => record.agentId !== agent.id)
+  state.chatSessions = state.chatSessions.filter((session) => session.agentId !== agent.id)
   state.activeAgentId = state.agents[0]?.id || ''
   view.value = 'run'
 }
@@ -747,6 +755,10 @@ function isImageFilePath(value: string): boolean {
   return /\.(png|jpe?g|webp|gif)$/i.test(value)
 }
 
+function canLaunchValueBeImage(value: string): boolean {
+  return value.startsWith('data:image/') || /^[A-Za-z0-9+/=\s]+$/.test(value) || isImageFilePath(value)
+}
+
 function usePayload(action: LaunchAction): string {
   if (action.type === 'img' || action.type === 'files') return ''
   if (typeof action.payload === 'string') return action.payload
@@ -764,22 +776,23 @@ function usePayload(action: LaunchAction): string {
   return ''
 }
 
-function addLaunchAttachmentFromValue(value: unknown): boolean {
-  if (visualAttachments.value.length >= MAX_VISUAL_ATTACHMENTS) return false
-
+function addLaunchAttachmentFromValue(value: unknown): 'added' | 'ignored' | 'limit' {
   if (typeof value === 'string') {
+    if (!canLaunchValueBeImage(value)) return 'ignored'
+    if (visualAttachments.value.length >= MAX_VISUAL_ATTACHMENTS) return 'limit'
+
     if (value.startsWith('data:image/') || /^[A-Za-z0-9+/=\s]+$/.test(value)) {
       addVisualAttachment(value, 'launch', 'Launch Image')
-      return true
+      return 'added'
     }
 
     if (isImageFilePath(value)) {
       const payload = window.aiAgentsServices?.readImageFile(value)
       if (payload) addVisualAttachmentPayload(payload, 'launch')
-      return Boolean(payload)
+      return payload ? 'added' : 'ignored'
     }
 
-    return false
+    return 'ignored'
   }
 
   if (value && typeof value === 'object') {
@@ -788,20 +801,26 @@ function addLaunchAttachmentFromValue(value: unknown): boolean {
     if ('base64' in value) return addLaunchAttachmentFromValue((value as { base64: unknown }).base64)
   }
 
-  return false
+  return 'ignored'
 }
 
 function addLaunchAttachments(action: LaunchAction): number {
   if (action.type !== 'img' && action.type !== 'files') return 0
   const before = visualAttachments.value.length
   const values = Array.isArray(action.payload) ? action.payload : [action.payload]
+  let skippedForLimit = 0
 
   for (const value of values) {
     try {
-      addLaunchAttachmentFromValue(value)
+      if (addLaunchAttachmentFromValue(value) === 'limit') skippedForLimit += 1
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err)
     }
+  }
+
+  if (skippedForLimit > 0) {
+    launchAttachmentWarning.value = `最多添加 ${MAX_VISUAL_ATTACHMENTS} 张图片，已忽略 ${skippedForLimit} 张`
+    error.value = launchAttachmentWarning.value
   }
 
   return visualAttachments.value.length - before
@@ -847,7 +866,8 @@ async function runStandardSelectedAgent(agent: AgentConfig, autoInput?: string):
 
   output.value = ''
   reasoning.value = ''
-  error.value = ''
+  error.value = launchAttachmentWarning.value
+  launchAttachmentWarning.value = ''
   status.value = '请求中'
   running.value = true
 
@@ -918,7 +938,8 @@ async function runChatSelectedAgent(agent: AgentConfig, autoInput?: string): Pro
   visualAttachments.value = []
   output.value = ''
   reasoning.value = ''
-  error.value = ''
+  error.value = launchAttachmentWarning.value
+  launchAttachmentWarning.value = ''
   status.value = '请求中'
   running.value = true
 
@@ -970,7 +991,8 @@ async function runNativeOcrSelectedAgent(agent: AgentConfig): Promise<void> {
 
   output.value = ''
   reasoning.value = ''
-  error.value = ''
+  error.value = launchAttachmentWarning.value
+  launchAttachmentWarning.value = ''
   status.value = '识别中'
   running.value = true
 
@@ -1025,6 +1047,7 @@ function clearCurrentRun(): void {
   output.value = ''
   reasoning.value = ''
   visualAttachments.value = []
+  launchAttachmentWarning.value = ''
   error.value = ''
   status.value = ''
 }
@@ -1055,6 +1078,7 @@ function handleKeyDown(event: KeyboardEvent): void {
 }
 
 function handleEnter(action: LaunchAction): void {
+  if (running.value || launchPending.value) return
   const directAgent =
     state.agents.find((agent) => agent.id === action.code) ||
     findAgentByFeatureCode(state.agents, action.code)
@@ -1067,10 +1091,19 @@ function handleEnter(action: LaunchAction): void {
   }
 
   const payloadText = usePayload(action)
+  const acceptsLaunchAttachments = action.type === 'img' || action.type === 'files'
+  if (payloadText || acceptsLaunchAttachments) clearCurrentRun()
   const imageCount = addLaunchAttachments(action)
   if (payloadText || imageCount > 0) {
     inputText.value = payloadText
-    nextTick(() => runSelectedAgent(payloadText))
+    launchPending.value = true
+    nextTick(async () => {
+      try {
+        await runSelectedAgent(payloadText)
+      } finally {
+        launchPending.value = false
+      }
+    })
   }
 }
 

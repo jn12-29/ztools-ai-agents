@@ -11,6 +11,11 @@ interface ParsedDataUrl {
   bytes: Uint8Array
 }
 
+export interface RestoredHistoryAttachments {
+  attachments: VisualAttachment[]
+  missingCount: number
+}
+
 function createVisualId(prefix: string): string {
   if (crypto.randomUUID) return `${prefix}-${crypto.randomUUID()}`
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
@@ -112,8 +117,9 @@ export function storeHistoryAttachments(attachments: VisualAttachment[]): AgentH
   })
 }
 
-export function loadHistoryAttachments(attachments: AgentHistoryAttachment[] = []): VisualAttachment[] {
-  return attachments
+export function restoreHistoryAttachments(attachments: AgentHistoryAttachment[] = []): RestoredHistoryAttachments {
+  let missingCount = 0
+  const restored = attachments
     .map((attachment): VisualAttachment | null => {
       if (attachment.dataUrl) {
         return {
@@ -124,7 +130,10 @@ export function loadHistoryAttachments(attachments: AgentHistoryAttachment[] = [
       }
 
       const bytes = window.ztools?.db?.getAttachment?.(attachment.id)
-      if (!bytes) return null
+      if (!bytes) {
+        missingCount += 1
+        return null
+      }
 
       return {
         ...attachment,
@@ -133,6 +142,12 @@ export function loadHistoryAttachments(attachments: AgentHistoryAttachment[] = [
       }
     })
     .filter((attachment): attachment is VisualAttachment => attachment !== null)
+
+  return { attachments: restored, missingCount }
+}
+
+export function loadHistoryAttachments(attachments: AgentHistoryAttachment[] = []): VisualAttachment[] {
+  return restoreHistoryAttachments(attachments).attachments
 }
 
 export function removeHistoryAttachments(records: { attachments?: AgentHistoryAttachment[] }[]): void {

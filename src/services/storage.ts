@@ -33,6 +33,37 @@ const DEFAULT_AGENT_OPTIONS = {
   thinkingBudgetText: ''
 }
 
+function normalizeOutputAction(value: unknown): AgentConfig['outputAction'] {
+  return value === 'copy' || value === 'paste' || value === 'show' ? value : 'show'
+}
+
+function normalizeVisionDetail(value: unknown): AgentConfig['visionDetail'] {
+  return value === 'low' || value === 'high' || value === 'auto' ? value : 'auto'
+}
+
+function normalizeThinkingProvider(value: unknown): AgentConfig['thinkingProvider'] {
+  return value === 'openai' || value === 'qwen' || value === 'gemini' || value === 'deepseek' || value === 'auto'
+    ? value
+    : 'auto'
+}
+
+function normalizeThinkingMode(value: unknown): AgentConfig['thinkingMode'] {
+  return value === 'on' || value === 'off' || value === 'default' ? value : 'default'
+}
+
+function normalizeThinkingEffort(value: unknown): AgentConfig['thinkingEffort'] {
+  return value === 'none' ||
+    value === 'minimal' ||
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'xhigh' ||
+    value === 'max' ||
+    value === ''
+    ? value
+    : ''
+}
+
 function cloneAgent(agent: AgentConfig): AgentConfig {
   return { ...agent }
 }
@@ -99,6 +130,7 @@ function normalizeAgent(agent: AgentConfig): AgentConfig {
     ...DEFAULT_AGENT_OPTIONS,
     ...agent
   }
+  const builtInById = typeof normalized.id === 'string' && isBuiltInAgentId(normalized.id)
   if (
     normalized.runTemplate !== 'chat' &&
     normalized.runTemplate !== 'nativeOcr' &&
@@ -110,6 +142,15 @@ function normalizeAgent(agent: AgentConfig): AgentConfig {
   if (typeof normalized.stream !== 'boolean') {
     normalized.stream = normalized.runTemplate === 'nativeOcr' ? false : true
   }
+  if (typeof normalized.builtIn !== 'boolean') normalized.builtIn = builtInById
+  if (typeof normalized.allowVision !== 'boolean') normalized.allowVision = true
+  if (typeof normalized.showReasoning !== 'boolean') normalized.showReasoning = false
+  if (typeof normalized.featureEnabled !== 'boolean') normalized.featureEnabled = !builtInById
+  normalized.outputAction = normalizeOutputAction(normalized.outputAction)
+  normalized.visionDetail = normalizeVisionDetail(normalized.visionDetail)
+  normalized.thinkingProvider = normalizeThinkingProvider(normalized.thinkingProvider)
+  normalized.thinkingMode = normalizeThinkingMode(normalized.thinkingMode)
+  normalized.thinkingEffort = normalizeThinkingEffort(normalized.thinkingEffort)
   if (typeof normalized.headersText !== 'string') normalized.headersText = ''
   if (!hasSavedExtraBodyText) normalized.extraBodyText = normalized.stream ? DEFAULT_STREAM_EXTRA_BODY_TEXT : ''
   if (typeof normalized.thinkingBudgetText !== 'string') normalized.thinkingBudgetText = ''

@@ -19,6 +19,13 @@ function parseJsonObject(text: string, label: string): Record<string, unknown> |
   return parsed as Record<string, unknown>
 }
 
+function headerValueToString(key: string, value: unknown): string {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+  throw new Error(`Headers ${key} 必须是 string、number 或 boolean`)
+}
+
 export function parseAgentRequestConfig(
   headersText: string,
   extraBodyText: string
@@ -30,7 +37,7 @@ export function parseAgentRequestConfig(
   }
   const headers = rawHeaders
     ? Object.fromEntries(
-        Object.entries(rawHeaders).map(([key, value]) => [key, String(value)])
+        Object.entries(rawHeaders).map(([key, value]) => [key, headerValueToString(key, value)])
       )
     : undefined
 
