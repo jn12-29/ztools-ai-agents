@@ -100,7 +100,18 @@ Provider-specific keys must match the selected model provider's OpenAI-compatibl
 
 ## Packaging
 
-Run `pnpm build`, then import or zip the generated `dist/` directory. Vite copies `public/plugin.json`, `public/logo.png`, and `public/preload/services.js` into `dist/`.
+Run `pnpm build` before packaging. Vite copies `public/plugin.json`, `public/logo.png`, and `public/preload/services.js` into `dist/`.
+
+For a local release package, zip the contents of `dist/` so `plugin.json` is at the package root:
+
+```powershell
+pnpm build
+Compress-Archive -Path .\dist\* -DestinationPath .\ztools-ai-agents-v0.1.0.zip -Force
+```
+
+Import the generated ZIP through ZTools' local plugin installer.
+
+When using the ZTools Developer Tool to create a `.zpx` package, build first and register `dist/plugin.json` as the development project config. The Developer Tool validates the `main` entry against the registered project directory, so release packaging must point at `dist/`, where `index.html` exists.
 
 ## Verification
 
